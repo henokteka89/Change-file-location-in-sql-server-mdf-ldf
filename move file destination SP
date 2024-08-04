@@ -1,70 +1,87 @@
---=============================================================-------
+--===========================================================================================================--
 /*
 The stored procedure streamlines the process of relocating SQL database files (MDF, NDF, LDF) 
-by allowing you to specify the database name and the new destination path. 
-This assumes that all files are moved to the same drive. 
-If files are moved to different drives, please adjust the "attach" statement 
-accordingly after manually moving the files to the correct locations.
+by allowing you to specify the database name (@dbname) and the new destination path. 
+The new destination can be separate for data files (@newDataLocation) and log files (@newLogLocation). 
+If you provide a single destination it will assume both data and log reside in the same path. 
+
+Sequence:
+1. Provide inputs 
+EXEC sp_MoveDatabaseFiles 'stackoverflow2013', 'D:\Data', 'E:\Log' --Moves the Data to D and Log to E drives
+EXEC sp_MoveDatabaseFiles 'stackoverflow2013', 'D:\Data'  -- Moves both data and log files to D drive
+2. Take the Output script and run the first part of the statement to detach the database. 
+3. Manually move the files to the location you wanted (specified in step 1)
+4. Take the output script and run the last part of the statement to attach the database.
+
 */
+--===========================================================================================================--
+ 
+USE MASTER
+GO
 
------
-
-
-Create or Alter Proc sp_filedestinationmove
-(
-@dbname NVARCHAR(128), @newLocation NVARCHAR(250)
-) 
+CREATE PROCEDURE sp_MoveDatabaseFiles
+    @dbname NVARCHAR(128),       -- Database name
+    @newDataLocation NVARCHAR(260), -- New directory for data files
+    @newLogLocation NVARCHAR(260) = NULL -- Optional new directory for log files
 AS
+BEGIN
+    SET NOCOUNT ON;
 
-Begin
- 
--- Step 1: Declare variables
+    DECLARE @detachCmd NVARCHAR(MAX) = N'';  
+    DECLARE @attachCmd NVARCHAR(MAX) = N'';  
+    DECLARE @counter INT = 1; -- Initialize counter for filename numbering
 
---DECLARE @dbname NVARCHAR(128) = N'path'; -- Replace with your database name
--- DECLARE @newLocation NVARCHAR(260) = N'D:\test'; -- New directory for file location
--- Uncomment the above two to debug
-DECLARE @detachCmd NVARCHAR(MAX) = N'';
-DECLARE @attachCmd NVARCHAR(MAX) = N'';
+    -- Step 1: Extract logical names and current physical paths  
+    DECLARE @files TABLE (  
+        logical_name NVARCHAR(128),  
+        physical_name NVARCHAR(260),  
+        type_desc NVARCHAR(10) -- 'ROWS' for data files, 'LOG' for log files
+    );  
 
--- Step 2: Extract logical names and current physical paths
-DECLARE @files TABLE (
-    logical_name NVARCHAR(128),
-    physical_name NVARCHAR(260)
-);
+    INSERT INTO @files (logical_name, physical_name, type_desc)  
+    SELECT mf.name, mf.physical_name, mf.type_desc
+    FROM sys.master_files AS mf
+    WHERE database_id = DB_ID(@dbname);  
 
-INSERT INTO @files (logical_name, physical_name)
-SELECT name, physical_name
-FROM sys.master_files
-WHERE database_id = DB_ID(@dbname);
- 
--- Step 3: Generate the detach command
-SET @detachCmd = N'ALTER DATABASE ' + QUOTENAME(@dbname) + ' SET SINGLE_USER WITH ROLLBACK IMMEDIATE;' + CHAR(13) +
-                 N'EXEC sp_detach_db @dbname = N''' + @dbname + ''';';
+    -- Step 2: Generate the detach command  
+    SET @detachCmd = N'ALTER DATABASE ' + QUOTENAME(@dbname) + ' SET SINGLE_USER WITH ROLLBACK IMMEDIATE;' + CHAR(13) +  
+                     N'EXEC sp_detach_db @dbname = N''' + @dbname + ''';';  
 
--- Step 4: Generate the attach command with placeholders for new paths
-SET @attachCmd = N'EXEC sp_attach_db @dbname = N''' + @dbname + '''';
+    -- Step 3: Generate the attach command with placeholders for new paths  
+    SET @attachCmd = N'EXEC sp_attach_db @dbname = N''' + @dbname + '''';  
 
--- Append each file's new path to the command with logical names
-SELECT @attachCmd = @attachCmd + N', @filename = N''' + @newLocation + '\' + RIGHT(physical_name, CHARINDEX('\', REVERSE(physical_name)) - 1) + ''''
-FROM @files;
+    -- Append each file's new path to the command with logical names
+    SELECT @attachCmd = @attachCmd + 
+                        N', @filename' + CAST(@counter AS NVARCHAR(10)) + 
+                        N' = N''' + 
+                        CASE 
+                            WHEN type_desc = 'LOG' AND @newLogLocation IS NOT NULL THEN @newLogLocation 
+                            ELSE @newDataLocation 
+                        END + '\' + RIGHT(physical_name, CHARINDEX('\', REVERSE(physical_name)) - 1) + '''',
+           @counter = @counter + 1
+    FROM @files;  
 
-SET @attachCmd = @attachCmd + ';' + CHAR(13) +
-                 N'ALTER DATABASE ' + QUOTENAME(@dbname) + ' SET MULTI_USER;';
+    SET @attachCmd = @attachCmd + ';' + CHAR(13) +  
+                     N'ALTER DATABASE ' + QUOTENAME(@dbname) + ' SET MULTI_USER;';  
 
--- Step 5: Output the detach, move, and attach commands
-PRINT '--- Detach Command ---';
-PRINT @detachCmd;
-PRINT CHAR(13);
+    -- Step 4: Output the detach, move, and attach commands  
+    PRINT '-- Step 1. Detach Command ---';  
+    PRINT @detachCmd;  
+    PRINT CHAR(13);  
 
-PRINT '--- Manual File Movement ---
--- Proceed to move the Files Manually
+    PRINT '-- Step 2. Manual File Movement ---';  
+    PRINT '-- Proceed to move the Files Manually';  
+    PRINT CHAR(13);  
 
-';
- 
-PRINT '--- Attach Command ---give numbers to @filename like 1,2,3 succesively';
-PRINT @attachCmd;
- 
-End
-Go
+    PRINT '-- Step 3. Attach Command ---';  
+    PRINT @attachCmd;
+    	Print '
+      -- If you encounter ' + '"Operating system error 5: 5(Access is denied.)" error, ' + 
+      '
+      -- Grant the SQL Logon Account (from the configuration manager) the necessary permissions to access the disk.
+   SET NOCOUNT OFF;    '
+END;
 
+-- Test 
+-- EXEC sp_MoveDatabaseFiles 'stackoverflow2013', 'D:\Data', 'E:\Log'
  
