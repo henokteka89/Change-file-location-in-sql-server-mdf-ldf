@@ -1,0 +1,45 @@
+
+-- Step 1: Declare variables
+DECLARE @dbname NVARCHAR(128) = N'path'; -- Replace with your database name
+DECLARE @detachCmd NVARCHAR(MAX) = N'';
+DECLARE @attachCmd NVARCHAR(MAX) = N'';
+DECLARE @newLocation NVARCHAR(260) = N'D:\test'; -- New directory for file location
+
+-- Step 2: Extract logical names and current physical paths
+DECLARE @files TABLE (
+    logical_name NVARCHAR(128),
+    physical_name NVARCHAR(260)
+);
+
+INSERT INTO @files (logical_name, physical_name)
+SELECT name, physical_name
+FROM sys.master_files
+WHERE database_id = DB_ID(@dbname);
+ 
+-- Step 3: Generate the detach command
+SET @detachCmd = N'ALTER DATABASE ' + QUOTENAME(@dbname) + ' SET SINGLE_USER WITH ROLLBACK IMMEDIATE;' + CHAR(13) +
+                 N'EXEC sp_detach_db @dbname = N''' + @dbname + ''';';
+
+-- Step 4: Generate the attach command with placeholders for new paths
+SET @attachCmd = N'EXEC sp_attach_db @dbname = N''' + @dbname + '''';
+
+-- Append each file's new path to the command with logical names
+SELECT @attachCmd = @attachCmd + N', @filename = N''' + @newLocation + '\' + RIGHT(physical_name, CHARINDEX('\', REVERSE(physical_name)) - 1) + ''''
+FROM @files;
+
+SET @attachCmd = @attachCmd + ';' + CHAR(13) +
+                 N'ALTER DATABASE ' + QUOTENAME(@dbname) + ' SET MULTI_USER;';
+
+-- Step 5: Output the detach, move, and attach commands
+PRINT '--- Detach Command ---';
+PRINT @detachCmd;
+PRINT CHAR(13);
+
+PRINT '--- Manual File Movement ---
+-- Proceed to Manually move the Files
+
+';
+ 
+PRINT '--- Attach Command ---';
+PRINT @attachCmd;
+ 
