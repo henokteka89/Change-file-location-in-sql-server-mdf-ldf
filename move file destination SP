@@ -3,14 +3,14 @@
 The stored procedure streamlines the process of relocating SQL database files (MDF, NDF, LDF) 
 by allowing you to specify the database name and the new destination path. 
 This assumes that all files are moved to the same drive. 
-If files are moved to different drives, please adjust the attach statement 
+If files are moved to different drives, please adjust the "attach" statement 
 accordingly after manually moving the files to the correct locations.
 */
 
 -----
 
 
-create or alter    proc sp_filedestinationmove
+Create or Alter Proc sp_filedestinationmove
 (
 @dbname NVARCHAR(128), @newLocation NVARCHAR(250)
 ) 
@@ -57,11 +57,11 @@ PRINT @detachCmd;
 PRINT CHAR(13);
 
 PRINT '--- Manual File Movement ---
--- Proceed to Manually move the Files
+-- Proceed to move the Files Manually
 
 ';
  
-PRINT '--- Attach Command ---';
+PRINT '--- Attach Command ---give numbers to @filename like 1,2,3 succesively';
 PRINT @attachCmd;
  
 End
