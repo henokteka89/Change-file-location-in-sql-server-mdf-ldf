@@ -1,0 +1,51 @@
+-- Declare variables
+DECLARE @dbname NVARCHAR(128) = N'test'; -- Replace with your database name
+DECLARE @newMdfLocation NVARCHAR(260) = N'd:'; -- Replace with new location for MDF
+DECLARE @newLdfLocation NVARCHAR(260) = N'd:'; -- Replace with new location for LDF
+DECLARE @cmd NVARCHAR(MAX) = N'';
+
+-- Table to hold file information
+DECLARE @files TABLE (
+    logical_name NVARCHAR(128),
+    physical_name NVARCHAR(260),
+    type_desc NVARCHAR(20)
+);
+
+-- Insert file information into the table
+INSERT INTO @files (logical_name, physical_name, type_desc)
+SELECT mf.name, mf.physical_name, mf.type_desc
+FROM sys.master_files mf
+JOIN sys.databases db ON mf.database_id = db.database_id
+WHERE db.name = @dbname;
+
+-- Build the ALTER DATABASE ... MODIFY FILE statements
+SELECT @cmd = @cmd + N'ALTER DATABASE ' + QUOTENAME(@dbname) + 
+    N' MODIFY FILE (NAME = ' + QUOTENAME(logical_name) + 
+    N', FILENAME = N''' + 
+    CASE 
+        WHEN type_desc = 'ROWS' THEN @newMdfLocation + '\' + RIGHT(physical_name, CHARINDEX('\', REVERSE(physical_name)) - 1)
+        WHEN type_desc = 'LOG' THEN @newLdfLocation + '\' + RIGHT(physical_name, CHARINDEX('\', REVERSE(physical_name)) - 1)
+        ELSE @newMdfLocation + '\' + RIGHT(physical_name, CHARINDEX('\', REVERSE(physical_name)) - 1)
+    END + N''');' + CHAR(13)
+FROM @files;
+
+-- Output the generated commands
+PRINT '-- 1. Run the below generated ALTER DATABASE ... MODIFY FILE statements ---';
+PRINT @cmd;
+
+Print '
+-- 2. Run the following SQL script to take the SQL database offline:
+Use master;
+ALTER DATABASE ' + @dbname + ' SET OFFLINE;  
+GO;
+
+--3. Next Bring the database Online using the command
+Use master;
+ALTER DATABASE ' + @dbname + ' SET ONLINE;  
+GO;
+
+-- If you encounter ' + '"Operating system error 5: 5(Access is denied.)" error, ' + 
+'
+Grant the SQL Logon Account (from configuration manager) the necessary permissions to access the disk.
+Then, bring the database back ONLINE'
+ 
