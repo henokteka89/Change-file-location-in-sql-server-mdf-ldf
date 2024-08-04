@@ -1,4 +1,4 @@
-
+DONT USE THIS WITHOUT TESTING
 -- Step 1: Declare variables
 DECLARE @dbname NVARCHAR(128) = N'path'; -- Replace with your database name
 DECLARE @detachCmd NVARCHAR(MAX) = N'';
